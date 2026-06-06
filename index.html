@@ -610,7 +610,7 @@ function buildFilters(){
   const groups=[
     {key:"eq",label:"Equipe",search:true,opts:EQUIPOS},
     {key:"pais",label:"País (Seleção)",search:true,opts:PAISES},
-    {key:"talle",label:"Talle",opts:SIZES.concat(["Kids"])},
+    {key:"talle",label:"Tamanho",opts:SIZES.concat(["Kids"])},
     {key:"gen",label:"Gênero",opts:["Masculino","Feminino","Infantil"]},
     {key:"cat",label:"Categoria",opts:CAT_ORDER},
   ];
@@ -666,7 +666,7 @@ function matches(d){
 
 function waLink(d,size){
   let txt=`Olá! Quero a camiseta:%0A%0A*${d.eq}*%0A${d.md}%0ACategoria: ${d.ct}%0AGênero: ${d.gn}`;
-  if(size) txt+=`%0ATalle: ${size}`;
+  if(size) txt+=`%0ATamanho: ${size}`;
   txt+=`%0A%0AEstá disponível?`;
   return `https://wa.me/${WA}?text=${txt}`;
 }
@@ -708,35 +708,44 @@ function curatedOrder(list){
   const pick=fn=>{ const c=pool.filter(d=>!used.has(d)&&fn(d)); return c.length?c[Math.floor(Math.random()*c.length)]:null; };
   const pickAll=fn=>shuffle(pool.filter(d=>!used.has(d)&&fn(d)));
 
-  // ---------- BLOQUE 1: primeras 9 curadas ----------
-  // 3 Brasil seleção al azar (solo titular/reserva masculino)
+  // helper: 1 camiseta masculina titular/reserva (no retrô, no kids) de un club, con fallback
+  const clubTipo=d=>d.gn==="Masculino"&&d.ct!=="Retrô"&&/TITULAR|RESERVA/i.test(d.md)&&!/KIDS|FEMININ|GOLEIRO|TREINO|PLAYER|JOGADOR|PRE|PRÉ|RETR/i.test(d.md);
+  const pickClub=names=>{
+    let d=pick(x=>names.includes(x.eqRaw)&&clubTipo(x));
+    if(!d) d=pick(x=>names.includes(x.eqRaw)&&x.gn==="Masculino"&&x.ct!=="Retrô");
+    if(!d) d=pick(x=>names.includes(x.eqRaw));
+    if(d){take(d);out.push(d);}
+  };
+
+  // ---------- BLOQUE 1: portada curada ----------
+  // 4 Brasil seleção masculino titular/reserva
   const braPortada=d=>d.lg==="Seleções"&&d.eqRaw==="BRASIL"&&d.gn==="Masculino"&&d.ct!=="Retrô"&&/TITULAR|RESERVA/i.test(d.md)&&!/KIDS|FEMININ|GOLEIRO|TREINO|PLAYER|JOGADOR|PRE|PRÉ|RETR/i.test(d.md);
-  let braPick=shuffle(pool.filter(d=>!used.has(d)&&braPortada(d))).slice(0,3);
-  // completar con cualquier Brasil masculino si faltara
-  if(braPick.length<3){ const extra=shuffle(pool.filter(d=>!used.has(d)&&d.lg==="Seleções"&&d.eqRaw==="BRASIL"&&d.gn==="Masculino"&&!braPick.includes(d))); braPick=braPick.concat(extra).slice(0,3); }
+  let braPick=shuffle(pool.filter(d=>!used.has(d)&&braPortada(d))).slice(0,4);
+  if(braPick.length<4){ const extra=shuffle(pool.filter(d=>!used.has(d)&&d.lg==="Seleções"&&d.eqRaw==="BRASIL"&&d.gn==="Masculino"&&!braPick.includes(d))); braPick=braPick.concat(extra).slice(0,4); }
   braPick.forEach(d=>{const t=take(d);if(t)out.push(t);});
-  // 3 Argentina: titular 2026, titular 2022, retrô azul — masculino, con reemplazo si falta
+
+  // 2 Argentina masculino (titular 2026 + titular 2022)
   const argSel=d=>d.lg==="Seleções"&&d.eqRaw==="ARGENTINA"&&d.gn==="Masculino";
   let arg=[];
   let a1=pick(d=>argSel(d)&&/TITULAR/i.test(d.md)&&/2026/.test(d.md)&&d.ct!=="Retrô"); if(a1){take(a1);arg.push(a1);}
   let a2=pick(d=>argSel(d)&&/TITULAR/i.test(d.md)&&/2022/.test(d.md)&&d.ct!=="Retrô"); if(a2){take(a2);arg.push(a2);}
-  let a3=pick(d=>argSel(d)&&d.ct==="Retrô"); if(a3){take(a3);arg.push(a3);} // retrô (azul/Maradona)
-  // completar hasta 3 con cualquier Argentina masculina no-retrô si faltó alguna
-  while(arg.length<3){ const x=pick(d=>argSel(d)&&d.ct!=="Retrô"); if(!x)break; take(x); arg.push(x); }
-  while(arg.length<3){ const x=pick(argSel); if(!x)break; take(x); arg.push(x); }
+  while(arg.length<2){ const x=pick(d=>argSel(d)&&d.ct!=="Retrô"); if(!x)break; take(x); arg.push(x); }
+  while(arg.length<2){ const x=pick(argSel); if(!x)break; take(x); arg.push(x); }
   arg.forEach(d=>out.push(d));
-  // 1 Boca, 1 River, 1 Peñarol
-  [["BOCA JUNIORS"],["RIVER PLATE"],["PENAROL","PEÑAROL"]].forEach(names=>{
-    const d=pick(x=>names.includes(x.eqRaw)); if(d){take(d);out.push(d);}
-  });
 
-  // ---------- BLOQUE 2: clubes de Brasil al azar (titular/reserva/suplente, sin retrô) ----------
-  const brTipo=d=>/TITULAR|RESERVA|THIRD|SUPLENTE|FOURTH/i.test(d.md) && !/KIDS|FEMININ|GOLEIRO|TREINO|PRE|PRÉ|REGATA|POLO|MANGA|JOGADOR|PLAYER/i.test(d.md);
-  pickAll(d=>d.lg==="Brasileirão"&&d.ct!=="Retrô"&&brTipo(d)).slice(0,9).forEach(d=>{take(d);out.push(d);});
+  // 18 clubes en orden exacto, 1 c/u (masculino titular/reserva)
+  const CLUBES_PORTADA=[
+    ["FLAMENGO"],["VASCO"],["FLUMINENSE"],["BOTAFOGO"],
+    ["PSG"],["REAL MADRID"],["BARCELONA"],["CHELSEA"],
+    ["MANCHESTER UNITED"],["MANCHESTER CITY"],["LIVERPOOL"],
+    ["INTER DE MILÃO"],["MILAN"],["JUVENTUS"],["BENFICA"],["PORTO"],
+    ["ATLETICO DE MADRID"],["NAPOLI"]
+  ];
+  CLUBES_PORTADA.forEach(names=>pickClub(names));
 
-  // ---------- BLOQUE 3: retrôs de grandes clubes de las mejores ligas ----------
+  // ---------- BLOQUE 2: retrôs de grandes clubes de las mejores ligas ----------
   let retros=pickAll(d=>d.ct==="Retrô"&&(BIG_LEAGUES.includes(d.lg)||BIG_CLUBS.includes(d.eqRaw)));
-  if(retros.length<9){ // completar con cualquier retrô de ligas grandes / o cualquier retrô
+  if(retros.length<9){
     const extra=pickAll(d=>d.ct==="Retrô"&&!retros.includes(d));
     retros=retros.concat(extra);
   }
